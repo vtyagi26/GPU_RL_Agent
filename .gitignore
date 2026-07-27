@@ -1,0 +1,50 @@
+# =========================
+# Backend (Python / ML)
+# =========================
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual Environments
+venv/
+env/
+.venv/
+.env
+
+# Generated Data & ML Weights
+# (Since these are generated locally via scripts)
+data/*.csv
+backend/data/*.csv
+backend/ml/lstm/weights/*.pt
+backend/ml/rl/weights/*.zip
+ml/lstm/weights/*.pt
+ml/rl/weights/*.zip
+
+# =========================
+# Frontend (Node / React)
+# =========================
+# Dependencies
+frontend/node_modules/
+node_modules/
+
+# Production Build
+frontend/dist/
+frontend/build/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# OS & IDE Files
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
