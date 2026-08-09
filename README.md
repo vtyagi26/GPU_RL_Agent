@@ -1,42 +1,135 @@
-# GPU Thermal RL Optimizer 🚀🌡️
+# NVIDIA H100 Agentic AI Thermal Controller & RAG System 🚀🌡️🤖
 
-A full-stack, real-time AI simulation platform that uses a **2-Brain Architecture** (LSTM + Reinforcement Learning) to proactively optimize datacenter and consumer GPU cooling systems. 
+An enterprise-grade, real-time **GenAI & Agentic AI Thermal Optimization Platform** engineered specifically for the **NVIDIA H100 SXM5 80GB (700W TDP)** GPU architecture. 
 
-By replacing reactive, hardcoded BIOS fan curves with predictive AI, this system minimizes thermal throttling, reduces power consumption, and maximizes hardware longevity across three distinct GPU tiers.
+By replacing reactive, hardcoded BIOS fan curves with a **5-Stage Closed-Loop Agentic AI Controller** (Observe → Reason → Plan → Act → Verify), a **PyTorch Multi-Step LSTM Predictor**, and a **Vector Retrieval-Augmented Generation (RAG) Engine**, this system proactively mitigates thermal throttling, prevents junction thermal runaway, reduces energy consumption, and extends hardware lifespan.
 
 ---
 
-## 🧠 The 2-Brain Architecture
+## 🏛️ System Architecture
 
-The core of this system relies on two decoupled neural networks working in tandem inside a custom first-principles thermodynamic physics engine:
+```
+                 ┌──────────────────────────┐
+                 │       H100 GPU           │
+                 │                          │
+                 │ Utilization              │
+                 │ Power                    │
+                 │ Temperature              │
+                 │ SM / Tensor utilization  │
+                 │ Memory / HBM metrics     │
+                 │ Clock                    │
+                 └────────────┬─────────────┘
+                              │
+                              ▼
+                 ┌──────────────────────────┐
+                 │   Telemetry Collector    │
+                 │      nvidia-smi / DCGM   │
+                 └────────────┬─────────────┘
+                              │
+                              ▼
+                 ┌──────────────────────────┐
+                 │      Thermal State       │
+                 │                          │
+                 │ Current temp             │
+                 │ Temp velocity            │
+                 │ Power trend              │
+                 │ Workload trend           │
+                 │ Predicted temperature    │
+                 └────────────┬─────────────┘
+                              │
+                              ▼
+                 ┌──────────────────────────┐
+                 │     Thermal Predictor    │
+                 │         LSTM             │
+                 │                          │
+                 │ Predict T+1 ... T+N      │
+                 └────────────┬─────────────┘
+                              │
+                              ▼
+                  ┌─────────────────────────┐
+                  │     AGENTIC AI          │
+                  │   Thermal Controller    │
+                  │                         │
+                  │ Observe → Reason → Plan │
+                  │ → Act → Verify          │
+                  └────────────┬────────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              ▼                ▼                ▼
+        Increase fan      Reduce power      Maintain
+        cooling           limit             settings
+              │                │                │
+              └────────────────┼────────────────┘
+                               ▼
+                         H100 GPU
+```
 
-1. **The Forecaster (PyTorch LSTM):** 
-   A multi-variate recurrent neural network that ingests real-time hardware telemetry (Power Draw, GPU Utilization, Clock Speeds, etc.) to predict the `Die_Temp_C` 5 seconds into the future. It uses Gaussian noise injection during training to prevent identity-mapping overfits.
-2. **The Controller (Stable-Baselines3 PPO Agent):** 
-   A Reinforcement Learning agent that receives the hardware state and the LSTM's forward-looking forecast. It adjusts Fan Speed and Liquid Coolant Flow continuously. Its reward function penalizes high temperatures, aggressive mechanical jitter (to save motor life), and wasted power.
+---
 
-## ⚙️ Thermodynamic Physics Engine
+## 📊 Monitored & Controlled Parameters
 
-The backend features a custom Gymnasium environment (`GPUCoolingEnv`) that calculates temperature deltas using first-principles heat transfer:
-* **Heat Generation:** Derived from simulated electrical power (Watts).
-* **Heat Dissipation:** Calculated via convection and forced fluid flow (Air + Liquid).
-* **Simulation Dual-Tracking:** The backend runs the physics engine *twice* per tick—once using stock BIOS policies (Unoptimized) and once using the RL Agent's policies (Optimized)—allowing for real-time performance comparison.
+The system ingests and optimizes **10 core NVIDIA H100 parameters**:
+
+| Parameter | Effect on Temperature | Role in System |
+| :--- | :--- | :--- |
+| **GPU Utilization (%)** | ↑ utilization → ↑ compute activity → ↑ power → ↑ temp | **Primary Input** |
+| **GPU Power Usage (W)** | ↑ power → ↑ heat generation | **Primary Input / Target** |
+| **GPU Clock / SM Clock (MHz)** | ↑ clock generally → ↑ power/heat | **Important Input / Advisory** |
+| **Memory Clock (MHz)** | ↑ HBM3 memory activity/clock → ↑ power | **Important Input** |
+| **GPU Memory Utilization (%)** | HBM3 memory traffic power contribution | **Secondary Input** |
+| **SM / Tensor Core Utilization (%)** | Heavy FP8/FP16 AI matrix workloads raise power significantly | **Key H100 Workload Indicator** |
+| **Fan Speed / Cooling Level (%)** | ↑ cooling → ↓ temperature | **Control Variable (Action 1)** |
+| **Ambient / Inlet Temp (°C)** | ↑ ambient → ↑ GPU temperature | **Environmental Constraint** |
+| **Power Limit (W)** | Restricts maximum GPU power (300W–700W) | **Control Constraint (Action 2)** |
+| **Workload Intensity / Trend** | Trajectory of AI compute load | **Derived State ($dW/dt$)** |
+
+---
+
+## 🔑 Key Features
+
+### 1. 🤖 5-Stage Agentic AI Control Loop
+The controller (`backend/ml/agentic/thermal_agent.py`) executes an autonomous 5-stage loop every telemetry tick:
+- **1. Observe**: Ingests 10-parameter telemetry, thermal velocity ($dT/dt$), ambient temperature, and LSTM $T+5$ predictions.
+- **2. Reason**: Evaluates junction thermal headroom to the **90°C TJunction Throttle Threshold** and assesses ambient limits.
+- **3. Plan**: Formulates preemption & dynamic TDP cap reduction strategies.
+- **4. Act**: Dispatches discrete commands (`INCREASE_FAN_COOLING`, `REDUCE_POWER_LIMIT`, `MAINTAIN_SETTINGS`).
+- **5. Verify**: Performs closed-loop verification check on thermal deceleration.
+
+### 2. 📚 Vector RAG Diagnostic Engine & Copilot Chat
+- **Knowledge Base**: Contains official NVIDIA H100 SXM5 technical specs, HBM3 memory thresholds, liquid cooling flow equations, and emergency playbooks.
+- **Vector Search Index**: Uses TF-IDF tokenization and Cosine Similarity vector matching (`backend/app/rag/vector_store.py`).
+- **Real-Time Telemetry RAG Diagnosis**: Generates executive diagnostic reading reports based on live thermal dynamics.
+- **RAG Copilot Chat**: Interactive chat assistant that answers user questions with direct document citations.
+
+### 3. 🧠 PyTorch LSTM Thermal Predictor
+- Predicts multi-step ahead die temperatures ($T+1 \dots T+5$, 25 seconds ahead).
+- Calibrated to project future Stock BIOS unoptimized temperature trajectories so the AI Agent can act *before* heat spikes occur.
+
+### 4. 📈 Dynamic Testing Profile (40°C → 95°C → 65°C–80°C)
+- Replays a dynamic 3-phase testing profile showcasing:
+  - **Phase 1**: Cool nominal baseline (~40°C).
+  - **Phase 2**: Heavy workload & ambient heatwave surge up to **95°C** (triggering AI emergency preemption & TDP power limit capping).
+  - **Phase 3**: Cooldown and stabilization into the safe **65°C – 80°C** equilibrium range.
+
+### 5. 🛡️ Arrhenius Hardware Lifespan & Sustainability HUD
+- Real-time counters tracking accrued energy saved (kJ), liquid coolant conserved (Liters), and Arrhenius semiconductor mean time between failures (MTBF) lifespan extension (+Hours / %).
 
 ---
 
 ## 🛠️ Tech Stack
 
-**Backend (Machine Learning & Streaming)**
-* **Framework:** FastAPI
-* **RL Framework:** Stable-Baselines3, Gymnasium
-* **Deep Learning:** PyTorch (LSTM)
-* **Data Processing:** Pandas, NumPy, Scikit-Learn
-* **Streaming:** WebSockets (asyncio)
+**Backend (Machine Learning, RAG & Streaming)**
+- **Framework:** FastAPI
+- **Agentic AI & RL:** Stable-Baselines3 (PPO Agent), Gymnasium (`H100CoolingEnv`)
+- **Deep Learning:** PyTorch (LSTM Thermal Predictor)
+- **Vector RAG:** Custom Cosine Similarity & TF-IDF Vector Index Engine
+- **Data & Math:** Pandas, NumPy, Scikit-Learn, Joblib
+- **Streaming:** WebSockets (`asyncio`)
 
-**Frontend (Visualization)**
-* **Framework:** React (Vite)
-* **Styling:** Tailwind CSS, Lucide Icons
-* **Charts:** Recharts (handling real-time data buffering and asynchronous forecasting)
+**Frontend (Dashboard & Visualization)**
+- **Framework:** React 19 (Vite)
+- **Styling:** Vanilla CSS3 (Glassmorphism & Sleek Dark Mode), Lucide Icons
+- **Charts:** Recharts (handling real-time data buffering and asynchronous forecasting)
 
 ---
 
@@ -48,53 +141,43 @@ git clone https://github.com/yourusername/gpu-thermal-rl-optimizer.git
 cd gpu-thermal-rl-optimizer
 ```
 
-### 2. Backend Setup & Model Training
-Navigate to the backend, set up your virtual environment, and generate the physical datasets.
+### 2. Backend Setup & Dataset Generation
+Navigate to the backend, set up your Python environment, and generate the physical telemetry dataset:
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows use: . env\Scripts ctivate
-pip install -r requirements.txt
-
-# 1. Generate 80/20 sustained workload datasets for all GPU tiers
+# 1. Generate dynamic H100 10-parameter telemetry dataset
 python generate_datasets.py
 
-# 2. Train the PyTorch LSTM & PPO RL Agent (This will save weights to ml/lstm/weights and ml/rl/weights)
-python train_models.py
+# 2. Train the PyTorch LSTM & PPO RL Agent (Saves weights to ml/lstm/weights and ml/rl/weights)
+python backend/train_models.py
 ```
 
-### 3. Start the FastAPI WebSocket Server
-Once training is complete, spin up the backend stream.
+### 3. Start the FastAPI Server
+Spin up the backend REST API & WebSocket stream:
 ```bash
-uvicorn app.main:app --reload --port 8000
+cd backend
+python -m uvicorn app.main:app --port 8000 --reload
 ```
 
-### 4. Start the React Frontend
-Open a new terminal window, navigate to the frontend directory, and start the UI.
+### 4. Start the React Frontend Dashboard
+Open a new terminal window, navigate to the frontend directory, and start the UI:
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-Visit `http://localhost:5173` (or your Vite local port) to view the live dashboard!
+Visit `http://localhost:5173` to launch the live **NVIDIA H100 Agentic AI Thermal Control Room**!
 
 ---
 
-## 🖥️ Supported Hardware Tiers
+## 📖 System Documentation & Interview Prep Guide
 
-The system simulates physics and controls specifically tuned for three tiers of hardware:
-
-| Tier | Cooling Method | Throttle Limit | Peak Power | Action Space |
-| :--- | :--- | :--- | :--- | :--- |
-| **NVIDIA H100** | Liquid + Air | 110°C | 700W | `[Pump %, Fan %]` |
-| **RTX 6000 Ada** | Air (Blower) | 90°C | 300W | `[Fan %]` |
-| **RTX 4050 Mobile**| Air (Shared) | 85°C | 85W | `[Fan %]` |
+For detailed technical explanations, mathematical formulations, LangChain/LangGraph concepts, and a 22-question technical interview guide, refer to:
+- **[System Documentation & Interview Prep Guide](system_documentation_and_interview_prep.md)**
+- **[Implementation Walkthrough](walkthrough.md)**
 
 ---
 
-## 📊 Dashboard Features
-* **Independent Forecasting:** The yellow LSTM prediction line is plotted natively in the future (T+5s), completely decoupled from the current temperature anchor.
-* **Live Delta Tracking:** Real-time visibility into the exact ±% RPM/LPM differential between the stock BIOS curve and the RL Agent's requested policy.
-* **Resource Savings:** Continuous accumulation of watts and coolant liters saved by the RL agent's efficiency.
+## 📄 License
+This project is open-source under the MIT License.
