@@ -1,185 +1,117 @@
+"""
+Training script for PyTorch Thermal LSTM Predictor and PPO RL Agent for NVIDIA H100.
+Saves model weights to ml/lstm/weights/ and ml/rl/weights/.
+"""
+
 import os
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import MinMaxScaler
-from stable_baselines3 import PPO
+import joblib
+
 from ml.lstm.model import ThermalLSTM
-from ml.rl.environment import GPUCoolingEnv
-
-# ==========================================================
-# Create directories for model weights
-# ==========================================================
-os.makedirs("ml/lstm/weights", exist_ok=True)
-os.makedirs("ml/rl/weights", exist_ok=True)
-
-# ==========================================================
-# GPU Tier Configuration
-# ==========================================================
-TIERS = {
-    "H100": {"csv": "../data/h100_telemetry.csv", "features": 8},
-    "RTX6000": {"csv": "../data/rtx6000_telemetry.csv", "features": 5},
-    "RTX4050": {"csv": "../data/rtx4050_telemetry.csv", "features": 4}
-}
+from ml.rl.environment import H100CoolingEnv
+from stable_baselines3 import PPO
 
 
-# ==========================================================
-# LSTM Training
-# ==========================================================
-def train_lstm(
-    tier,
-    csv_path,
-    num_features,
-    window_size=40,
-    future_steps=5,
-    epochs=35
-):
-    print(f"\n--- Training Tuned LSTM Predictor for Tier: {tier} ---")
+def train_h100_lstm(data_path: str = "data/h100_telemetry.csv", epochs: int = 20):
+    print("\n[INFO] Training PyTorch Thermal LSTM Predictor for H100...")
 
-    if not os.path.exists(csv_path):
-        csv_path = csv_path.replace("../data/", "data/")
+    if not os.path.exists(data_path):
+        data_path = os.path.join("..", data_path)
 
-    df = pd.read_csv(csv_path)
+    df = pd.read_csv(data_path)
+    feature_cols = [c for c in df.columns if c != "Timestamp" and c != "Workload_Intensity"]
 
-    feature_cols = [c for c in df.columns if c != "Timestamp"]
-    data = df[feature_cols].values
-
+    # Scaling
     scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data)
+    scaled_data = scaler.fit_transform(df[feature_cols].values)
 
-    X = []
-    Y = []
+    seq_len = 16
+    future_steps = 5
 
-    for i in range(len(scaled_data) - window_size - future_steps):
-        X.append(scaled_data[i:i + window_size])
-        Y.append(
-            scaled_data[
-                i + window_size:
-                i + window_size + future_steps,
-                :
-            ]
-        )
+    X, y = [], []
+    temp_idx = feature_cols.index("GPU_Temp_C")
+
+    for i in range(len(scaled_data) - seq_len - future_steps + 1):
+        X.append(scaled_data[i: i + seq_len])
+        y.append(scaled_data[i + seq_len: i + seq_len + future_steps, temp_idx])
 
     X = torch.tensor(np.array(X), dtype=torch.float32)
-    Y = torch.tensor(np.array(Y), dtype=torch.float32)
+    y = torch.tensor(np.array(y), dtype=torch.float32)
 
-    dataset = TensorDataset(X, Y)
+    dataset = TensorDataset(X, y)
+    loader = DataLoader(dataset, batch_size=32, shuffle=True)
 
-    loader = DataLoader(
-        dataset,
-        batch_size=64,
-        shuffle=True
-    )
-
-    # Slightly smaller model reduces overfitting
     model = ThermalLSTM(
-        input_size=num_features,
-        hidden_size=48,
+        input_size=len(feature_cols),
+        hidden_size=64,
         num_layers=2,
-        future_steps=future_steps
+        future_steps=future_steps,
+        dropout=0.20
     )
 
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
     criterion = nn.MSELoss()
 
-    optimizer = optim.AdamW(
-        model.parameters(),
-        lr=0.001,
-        weight_decay=5e-4
-    )
-
     model.train()
-
-    for epoch in range(epochs):
-
-        total_loss = 0.0
-
+    for ep in range(epochs):
+        ep_loss = 0.0
         for batch_x, batch_y in loader:
-
             optimizer.zero_grad()
-
-            # Stronger input noise acts as data augmentation
-            noise = torch.randn_like(batch_x) * 0.03
-
-            outputs = model(batch_x + noise)
-
-            loss = criterion(outputs, batch_y)
-
+            preds = model(batch_x)
+            loss = criterion(preds, batch_y)
             loss.backward()
-
-            # Prevent exploding gradients
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-
             optimizer.step()
+            ep_loss += loss.item()
 
-            total_loss += loss.item()
+        if (ep + 1) % 5 == 0 or ep == epochs - 1:
+            print(f"   Epoch {ep+1}/{epochs} - Loss: {ep_loss / len(loader):.6f}")
 
-        if (epoch + 1) % 5 == 0 or epoch == epochs - 1:
-            print(
-                f"Epoch [{epoch+1}/{epochs}] "
-                f"Loss: {total_loss / len(loader):.6f}"
-            )
+    # Save weights & scaler
+    weights_dir = os.path.join(os.path.dirname(__file__), "ml", "lstm", "weights")
+    os.makedirs(weights_dir, exist_ok=True)
 
-    torch.save(
-        model.state_dict(),
-        f"ml/lstm/weights/lstm_{tier.lower()}.pt"
-    )
+    weight_path = os.path.join(weights_dir, "lstm_h100.pt")
+    scaler_path = os.path.join(weights_dir, "scaler_h100.pkl")
 
-    print(
-        f"Saved LSTM weights to "
-        f"ml/lstm/weights/lstm_{tier.lower()}.pt"
-    )
+    torch.save(model.state_dict(), weight_path)
+    joblib.dump(scaler, scaler_path)
+
+    print(f"[OK] Saved LSTM weights -> {weight_path}")
+    print(f"[OK] Saved Scaler -> {scaler_path}")
 
 
-# ==========================================================
-# PPO RL Training
-# ==========================================================
-def train_rl(tier, timesteps=50000):
+def train_h100_ppo(total_timesteps: int = 15000):
+    print("\n[INFO] Training Stable-Baselines3 PPO RL Agent for H100...")
+    env = H100CoolingEnv()
 
-    print(f"\n--- Training PPO RL Agent for Tier: {tier} ---")
-
-    env = GPUCoolingEnv(tier=tier)
-
-    agent = PPO(
+    model = PPO(
         "MlpPolicy",
         env,
-        verbose=0,
         learning_rate=3e-4,
-        n_steps=4096,
-        batch_size=128,
+        n_steps=1024,
+        batch_size=64,
+        n_epochs=10,
         gamma=0.99,
-        gae_lambda=0.95,
-        ent_coef=0.01,
-        clip_range=0.2
+        verbose=0
     )
 
-    agent.learn(total_timesteps=timesteps)
+    model.learn(total_timesteps=total_timesteps)
 
-    agent.save(
-        f"ml/rl/weights/ppo_{tier.lower()}.zip"
-    )
+    weights_dir = os.path.join(os.path.dirname(__file__), "ml", "rl", "weights")
+    os.makedirs(weights_dir, exist_ok=True)
 
-    print(
-        f"Saved RL Agent weights to "
-        f"ml/rl/weights/ppo_{tier.lower()}.zip"
-    )
+    ppo_path = os.path.join(weights_dir, "ppo_h100.zip")
+    model.save(ppo_path)
+
+    print(f"[OK] Saved PPO Agent weights -> {ppo_path}")
 
 
-# ==========================================================
-# Main Training Pipeline
-# ==========================================================
 if __name__ == "__main__":
-
-    for tier, info in TIERS.items():
-
-        train_lstm(
-            tier=tier,
-            csv_path=info["csv"],
-            num_features=info["features"]
-        )
-
-        train_rl(tier)
-
-    print("\nTraining Pipeline Complete!")
+    train_h100_lstm(epochs=15)
+    train_h100_ppo(total_timesteps=15000)
+    print("\n[SUCCESS] Training Completed Successfully!")

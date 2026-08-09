@@ -1,1 +1,152 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* ────────────────────────────────────────────
+   TOKENS
+──────────────────────────────────────────── */
+:root {
+  --bg-base:        #030712;
+  --bg-panel:       rgba(10, 20, 40, 0.65);
+  --bg-panel-hover: rgba(16, 30, 55, 0.80);
+  --border:         rgba(255, 255, 255, 0.07);
+  --border-hover:   rgba(255, 255, 255, 0.13);
+
+  --emerald-400: #34d399;
+  --emerald-500: #10b981;
+  --cyan-400:    #22d3ee;
+  --amber-400:   #fbbf24;
+  --rose-500:    #f43f5e;
+  --violet-400:  #a78bfa;
+
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
+
+  --radius-card: 1.25rem;
+  --radius-sm:   0.75rem;
+
+  --shadow-emerald: 0 0 30px rgba(16, 185, 129, 0.12);
+  --shadow-amber:   0 0 30px rgba(251, 191, 36, 0.12);
+  --shadow-cyan:    0 0 30px rgba(34, 211, 238, 0.12);
+}
+
+/* ────────────────────────────────────────────
+   RESET & BASE
+──────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ────────────────────────────────────────────
+   GLASS PANEL
+──────────────────────────────────────────── */
+.glass {
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.glass:hover { border-color: var(--border-hover); }
+
+/* ────────────────────────────────────────────
+   GLOW UTILITIES
+──────────────────────────────────────────── */
+.glow-emerald { box-shadow: var(--shadow-emerald); }
+.glow-amber   { box-shadow: var(--shadow-amber); }
+.glow-cyan    { box-shadow: var(--shadow-cyan); }
+
+/* ────────────────────────────────────────────
+   TYPOGRAPHY
+──────────────────────────────────────────── */
+.mono { font-family: 'JetBrains Mono', monospace; }
+
+/* ────────────────────────────────────────────
+   ANIMATED PROGRESS BAR
+──────────────────────────────────────────── */
+.progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ────────────────────────────────────────────
+   PULSE INDICATOR
+──────────────────────────────────────────── */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.5); }
+}
+.pulse { animation: pulse-dot 1.5s ease-in-out infinite; }
+
+/* ────────────────────────────────────────────
+   SPIKE ALERT FLASH
+──────────────────────────────────────────── */
+@keyframes flash-amber {
+  0%, 100% { background: rgba(251,191,36,0.15); }
+  50%       { background: rgba(251,191,36,0.30); }
+}
+.alert-spike { animation: flash-amber 1.2s ease-in-out infinite; }
+
+/* ────────────────────────────────────────────
+   FADE-IN
+──────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fade-in 0.35s ease-out forwards; }
+
+/* ────────────────────────────────────────────
+   TIER SWITCHER BUTTONS
+──────────────────────────────────────────── */
+.tier-btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: all 0.18s ease;
+}
+.tier-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
+.tier-btn.active {
+  background: linear-gradient(135deg, var(--emerald-500), #0891b2);
+  color: #0a1628;
+  box-shadow: 0 4px 18px rgba(16,185,129,0.30);
+}
+
+/* ────────────────────────────────────────────
+   CHART TOOLTIP
+──────────────────────────────────────────── */
+.recharts-tooltip-wrapper .custom-tooltip {
+  background: rgba(3,7,18,0.96);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+}
+
+/* ────────────────────────────────────────────
+   SCROLLBAR
+──────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; }

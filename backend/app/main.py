@@ -4,15 +4,15 @@ from app.api.routes import router as api_router
 from app.api.websockets import ws_router
 
 app = FastAPI(
-    title="GPU Thermal Analyser API",
-    description="Backend API powering real-time LSTM forecasting & RL cooling optimization across 3 GPU tiers.",
-    version="1.0.0"
+    title="NVIDIA H100 Agentic AI Thermal Controller & RAG Engine",
+    description="Backend API powering real-time 10-parameter H100 thermal forecasting, RAG diagnosis, and 5-stage Agentic Control Policy.",
+    version="2.0.0"
 )
 
 # Allow CORS for React frontend (Vite defaults to http://localhost:5173)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,9 +22,15 @@ app.add_middleware(
 app.include_router(api_router, prefix="/api")
 app.include_router(ws_router)
 
+
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "GPU Thermal Analyser Backend is Running."}
+    return {
+        "status": "online",
+        "system": "NVIDIA H100 Agentic AI Thermal Controller",
+        "message": "Backend API & RAG Vector Engine is running."
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

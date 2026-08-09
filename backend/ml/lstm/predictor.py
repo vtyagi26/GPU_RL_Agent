@@ -1,74 +1,112 @@
+"""
+LSTM Predictor — Fixed calibration & sequence padding.
+
+Ensures:
+  1. Sequence padding so LSTM predicts accurate future Stock BIOS temperatures right from step 0.
+  2. Direct mathematical inverse transform using scaler bounds (data_min_ & data_max_).
+  3. Strict alignment with future Stock BIOS thermal trajectory.
+"""
+
 import os
+import numpy as np
 import torch
-from sklearn.preprocessing import MinMaxScaler
+import joblib
+
 from .model import ThermalLSTM
 
 
 class LSTMPredictor:
-    def __init__(self, num_features, tier="RTX6000"):
-        self.tier = tier
 
-        # Must match training configuration
+    SEQUENCE_LENGTH = 16   # 16 × 5s = 80s of history for fast responsive forecasting
+    FUTURE_STEPS    = 5
+
+    def __init__(self, num_features: int, tier: str = "h100"):
+        self.tier         = tier.lower()
+        self.num_features = num_features
+        self.history      = []
+        self.scaler       = None
+        self.temp_idx     = 0  # GPU_Temp_C is column index 0
+
         self.model = ThermalLSTM(
-            input_size=num_features,
-            hidden_size=48,
-            num_layers=2,
-            future_steps=5,
-            dropout=0.4
+            input_size   = num_features,
+            hidden_size  = 64,
+            num_layers   = 2,
+            future_steps = self.FUTURE_STEPS,
+            dropout      = 0.20,
         )
-
         self.model.eval()
-        self.scaler = None
 
-        weight_path = f"ml/lstm/weights/lstm_{tier.lower()}.pt"
+        # Resolve weight paths
+        base = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+        self._weight_path = self._resolve(base, f"ml/lstm/weights/lstm_{self.tier}.pt")
+        self._scaler_path = self._resolve(base, f"ml/lstm/weights/scaler_{self.tier}.pkl")
 
-        if not os.path.exists(weight_path):
-            weight_path = f"backend/ml/lstm/weights/lstm_{tier.lower()}.pt"
-
-        if os.path.exists(weight_path):
+        if os.path.exists(self._weight_path):
             self.model.load_state_dict(
-                torch.load(weight_path, map_location=torch.device("cpu"))
+                torch.load(self._weight_path, map_location="cpu", weights_only=True)
             )
-            print(f"Loaded LSTM weights for {tier}")
+            print(f"[OK] Loaded PyTorch LSTM weights for {tier}")
         else:
-            print(f"Warning: No LSTM weights found for {tier}")
+            print(f"[WARNING] LSTM weights not found for {tier}. Using initialized model.")
 
-    def update_scaler(self, df):
+        if os.path.exists(self._scaler_path):
+            self.scaler = joblib.load(self._scaler_path)
+            print(f"[OK] Loaded MinMaxScaler for {tier}")
+        else:
+            print(f"[WARNING] MinMaxScaler not found for {tier}.")
+
+    def _resolve(self, base, rel):
+        p = os.path.join(base, rel)
+        if not os.path.exists(p):
+            p = rel
+        return p
+
+    def reset_history(self):
+        self.history = []
+
+    def update_history(self, row: np.ndarray):
+        """Push one telemetry row (raw, unscaled)."""
+        self.history.append(row.astype(np.float32))
+        if len(self.history) > self.SEQUENCE_LENGTH:
+            self.history = self.history[-self.SEQUENCE_LENGTH:]
+
+    def predict(self, telemetry: np.ndarray) -> np.ndarray:
         """
-        Fit scaler using telemetry dataframe.
-        Should be called once before prediction.
+        Pushes current telemetry row, returns array of 5 future Stock BIOS temperatures (°C).
+        Pads initial sequence so forecast is dynamic right from step 0.
         """
-        self.scaler = MinMaxScaler()
-        self.scaler.fit(df.values)
+        self.update_history(telemetry)
 
-    def predict(self, current_state):
-        """
-        Predict the next 5 timesteps.
+        # Pad sequence with initial row if history is not full yet
+        if len(self.history) < self.SEQUENCE_LENGTH:
+            pad_count = self.SEQUENCE_LENGTH - len(self.history)
+            padded_seq = [self.history[0]] * pad_count + self.history
+        else:
+            padded_seq = self.history
 
-        Args:
-            current_state: list/array of current telemetry values.
+        seq = np.array(padded_seq, dtype=np.float32)  # (16, num_features)
 
-        Returns:
-            numpy.ndarray of shape (5, num_features)
-        """
+        # Apply MinMaxScaler transform
+        if self.scaler is not None:
+            seq_scaled = self.scaler.transform(seq)
+        else:
+            col_max = np.abs(seq).max(axis=0) + 1e-8
+            seq_scaled = seq / col_max
 
-        if self.scaler is None:
-            raise RuntimeError(
-                "Scaler has not been initialized. "
-                "Call update_scaler() before predict()."
-            )
-
-        # Scale current telemetry
-        scaled = self.scaler.transform([current_state])
-
-        # Create a sequence of length 40 (must match training window_size)
-        seq = (
-            torch.tensor(scaled, dtype=torch.float32)
-            .unsqueeze(0)
-            .repeat(1, 40, 1)
-        )
+        tensor = torch.tensor(seq_scaled[np.newaxis], dtype=torch.float32)
 
         with torch.no_grad():
-            prediction = self.model(seq)
+            pred_norm = self.model(tensor).numpy()[0]  # (5,) normalized
 
-        return prediction.numpy()[0]
+        # Inverse Transform for GPU_Temp_C (column 0)
+        if self.scaler is not None and hasattr(self.scaler, "data_min_") and hasattr(self.scaler, "data_max_"):
+            min_temp = float(self.scaler.data_min_[self.temp_idx])
+            max_temp = float(self.scaler.data_max_[self.temp_idx])
+            future_temps = pred_norm * (max_temp - min_temp) + min_temp
+        else:
+            current_temp = float(telemetry[self.temp_idx])
+            future_temps = current_temp + pred_norm * 15.0
+
+        # Sanity bounds check
+        future_temps = np.clip(future_temps, 30.0, 100.0)
+        return future_temps.astype(np.float32)
